@@ -265,11 +265,46 @@ def manual_reconstruct_3d():
             'success': True,
             'method': 'manual_tracking',
             'total_points': result['total_points'],
-            'branches_3d': result['branches_3d'],
-            'bifurcations': result['bifurcations'],
+            'branches_3d': [],
+            'bifurcations': [],
             'confidence': result['confidence'],
             'processing_time': result.get('processing_time', 0)
         }
+        
+        # Convert 3D branches (handle NumPy arrays)
+        for branch in result['branches_3d']:
+            branch_data = {
+                'type': branch['type'],
+                'confidence': branch['confidence'],
+                'points': []
+            }
+            
+            # Convert NumPy arrays to lists
+            if 'points' in branch:
+                for point in branch['points']:
+                    if hasattr(point, 'tolist'):  # NumPy array
+                        branch_data['points'].append(point.tolist())
+                    else:  # Regular list
+                        branch_data['points'].append(point)
+            
+            json_result['branches_3d'].append(branch_data)
+        
+        # Convert bifurcations (handle NumPy arrays)
+        for bifurcation in result['bifurcations']:
+            bifurcation_data = {
+                'type': bifurcation.get('type', 'bifurcation'),
+                'confidence': bifurcation['confidence']
+            }
+            
+            # Convert position to list if it's a NumPy array
+            if 'position' in bifurcation:
+                position = bifurcation['position']
+                if hasattr(position, 'tolist'):  # NumPy array
+                    bifurcation_data['position'] = position.tolist()
+                else:  # Regular list
+                    bifurcation_data['position'] = position
+            
+            json_result['bifurcations'].append(bifurcation_data)
         
         return jsonify(json_result)
         
