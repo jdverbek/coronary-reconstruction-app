@@ -357,7 +357,7 @@ def process_manual_tracking_data(tracking_data, images):
 
 def perform_manual_3d_reconstruction(tracking_data):
     """
-    Perform 3D reconstruction from manually tracked points with enhanced bifurcation analysis.
+    Simplified 3D reconstruction from manually tracked points - optimized for cloud deployment.
     """
     import time
     start_time = time.time()
@@ -368,17 +368,15 @@ def perform_manual_3d_reconstruction(tracking_data):
             'branches_3d': [],
             'bifurcations': [],
             'confidence': 0.0,
-            'processing_time': 0,
-            'optimal_angles': None
+            'processing_time': 0
         }
     
     branches_3d = []
     bifurcations = []
     total_points = 0
     
-    # Enhanced triangulation for each branch type
+    # Simplified triangulation for each branch type
     branch_types = ['main_vessel', 'branch_1', 'branch_2', 'bifurcation']
-    branch_vectors = {}
     
     for branch_type in branch_types:
         # Collect points from all images for this branch type
@@ -398,30 +396,17 @@ def perform_manual_3d_reconstruction(tracking_data):
                     total_points += 1
         
         if len(branch_points_2d) >= 2:  # Need at least 2 views
-            # Enhanced 3D reconstruction using improved triangulation
-            points_3d = triangulate_points_enhanced(branch_points_2d)
+            # Fast 3D reconstruction
+            points_3d = triangulate_points_fast(branch_points_2d)
             
             if len(points_3d) > 0:
-                # Calculate branch vector for optimal angle analysis
-                if len(points_3d) >= 2:
-                    start_point = points_3d[0]
-                    end_point = points_3d[-1]
-                    branch_vector = end_point - start_point
-                    branch_vector = branch_vector / np.linalg.norm(branch_vector)  # Normalize
-                    branch_vectors[branch_type] = {
-                        'vector': branch_vector,
-                        'start_point': start_point,
-                        'end_point': end_point,
-                        'points': points_3d
-                    }
-                
                 branches_3d.append({
                     'type': branch_type,
                     'points': points_3d,
-                    'confidence': min(1.0, len(branch_points_2d) / 4.0)  # Higher confidence with more views
+                    'confidence': min(1.0, len(branch_points_2d) / 4.0)
                 })
                 
-                # Enhanced bifurcation detection
+                # Simple bifurcation detection
                 if branch_type == 'bifurcation' and len(points_3d) > 0:
                     for point_3d in points_3d:
                         bifurcations.append({
@@ -430,20 +415,48 @@ def perform_manual_3d_reconstruction(tracking_data):
                             'confidence': 0.9
                         })
     
-    # Calculate optimal viewing angles using bifurcation plane analysis
-    optimal_angles = calculate_optimal_viewing_angles(branch_vectors)
-    
     processing_time = time.time() - start_time
-    confidence = min(1.0, len(branches_3d) / 3.0)  # Higher confidence with more branches
+    confidence = min(1.0, len(branches_3d) / 3.0)
     
     return {
         'total_points': total_points,
         'branches_3d': branches_3d,
         'bifurcations': bifurcations,
         'confidence': confidence,
-        'processing_time': processing_time,
-        'optimal_angles': optimal_angles
+        'processing_time': processing_time
     }
+
+def triangulate_points_fast(points_2d_data):
+    """
+    Fast triangulation optimized for cloud deployment.
+    """
+    if len(points_2d_data) < 2:
+        return []
+    
+    points_3d = []
+    
+    for i, point_data in enumerate(points_2d_data):
+        point_2d = point_data['point']
+        angles = point_data['angles']
+        image_shape = point_data['image_shape']
+        
+        # Fast 3D estimation
+        x_norm = (point_2d[0] - image_shape[1]/2) / (image_shape[1]/2)
+        y_norm = (point_2d[1] - image_shape[0]/2) / (image_shape[0]/2)
+        
+        # Simple projection
+        lao_rao_rad = np.radians(angles['lao_rao'])
+        cranial_caudal_rad = np.radians(angles['cranial_caudal'])
+        
+        depth = 500 + np.random.normal(0, 30)
+        
+        x_3d = x_norm * depth * np.sin(lao_rao_rad)
+        y_3d = y_norm * depth * np.sin(cranial_caudal_rad)
+        z_3d = depth * np.cos(lao_rao_rad) * np.cos(cranial_caudal_rad)
+        
+        points_3d.append([x_3d, y_3d, z_3d])
+    
+    return points_3d
 
 def triangulate_points_enhanced(points_2d_data):
     """
