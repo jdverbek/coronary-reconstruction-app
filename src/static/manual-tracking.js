@@ -527,8 +527,6 @@ class ManualTracker {
     
     displayReconstructionResults(result) {
         const statsDiv = document.getElementById('resultStats');
-        const canvas3D = document.getElementById('reconstruction3D');
-        const ctx3D = canvas3D.getContext('2d');
         
         // Display statistics
         statsDiv.innerHTML = `
@@ -539,11 +537,338 @@ class ManualTracker {
             <div><strong>Success Rate:</strong> ${Math.round(result.confidence * 100)}%</div>
         `;
         
-        // Simple 3D visualization
-        this.render3DVisualization(ctx3D, result.branches_3d || []);
+        // Initialize and render 3D visualization
+        this.init3DVisualization();
+        setTimeout(() => {
+            this.visualize3DReconstruction(result);
+        }, 100);
+    }
+    
+    // Advanced 3D Visualization with Three.js
+    init3DVisualization() {
+        if (this.scene) return; // Already initialized
+        
+        const canvas3D = document.getElementById('reconstruction3D');
+        if (!canvas3D) return;
+
+        // Scene setup
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x2a2a3a);
+
+        // Camera setup
+        this.camera = new THREE.PerspectiveCamera(75, canvas3D.clientWidth / canvas3D.clientHeight, 0.1, 1000);
+        this.camera.position.set(0, 0, 500);
+
+        // Renderer setup
+        this.renderer = new THREE.WebGLRenderer({ canvas: canvas3D, antialias: true });
+        this.renderer.setSize(canvas3D.clientWidth, canvas3D.clientHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Controls setup
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        this.controls.enableZoom = true;
+        this.controls.enablePan = true;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+        this.scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(100, 100, 50);
+        directionalLight.castShadow = true;
+        this.scene.add(directionalLight);
+
+        // Grid helper
+        const gridHelper = new THREE.GridHelper(200, 20, 0x444444, 0x222222);
+        this.scene.add(gridHelper);
+
+        // Vessel group
+        this.vesselGroup = new THREE.Group();
+        this.scene.add(this.vesselGroup);
+
+        // Animation loop
+        this.animate();
+    }
+
+    animate() {
+        if (!this.renderer) return;
+        
+        requestAnimationFrame(() => this.animate());
+        if (this.controls) this.controls.update();
+        if (this.renderer && this.scene && this.camera) {
+            this.renderer.render(this.scene, this.camera);
+        }
+    }
+
+    visualize3DReconstruction(result) {
+        if (!this.scene || !this.vesselGroup) {
+            this.init3DVisualization();
+            setTimeout(() => this.visualize3DReconstruction(result), 100);
+            return;
+        }
+
+        // Clear previous visualization
+        while (this.vesselGroup.children.length > 0) {
+            this.vesselGroup.remove(this.vesselGroup.children[0]);
+        }
+
+        const branchColors = {
+            'main_vessel': 0xff6b6b,
+            'branch_1': 0x4ecdc4,
+            'branch_2': 0x45b7d1,
+            'bifurcation': 0xffd93d
+        };
+
+        let allPoints = [];
+        let branchVectors = [];
+
+        // Visualize branches
+        result.branches_3d.forEach((branch, branchIndex) => {
+            if (!branch.points || branch.points.length === 0) return;
+
+            const color = branchColors[branch.type] || 0x888888;
+            const points = branch.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+            allPoints = allPoints.concat(points);
+
+            // Create tube geometry for vessel
+            if (points.length > 1) {
+                const curve = new THREE.CatmullRomCurve3(points);
+                const tubeGeometry = new THREE.TubeGeometry(curve, points.length * 2, 2, 8, false);
+                const tubeMaterial = new THREE.MeshPhongMaterial({ 
+                    color: color,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+                tube.castShadow = true;
+                tube.receiveShadow = true;
+                this.vesselGroup.add(tube);
+
+                // Store branch vectors for optimal angle calculation
+                if (points.length >= 2) {
+                    const startPoint = points[0];
+                    const endPoint = points[points.length - 1];
+                    const branchVector = endPoint.clone().sub(startPoint).normalize();
+                    branchVectors.push({
+                        type: branch.type,
+                        vector: branchVector,
+                        startPoint: startPoint,
+                        endPoint: endPoint
+                    });
+                }
+            }
+
+            // Add point markers
+            points.forEach((point, pointIndex) => {
+                const sphereGeometry = new THREE.SphereGeometry(1.5, 16, 16);
+                const sphereMaterial = new THREE.MeshPhongMaterial({ color: color });
+                const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+                sphere.position.copy(point);
+                sphere.castShadow = true;
+                this.vesselGroup.add(sphere);
+            });
+        });
+
+        // Visualize bifurcations
+        result.bifurcations.forEach((bifurcation, bifIndex) => {
+            if (!bifurcation.position) return;
+
+            const position = new THREE.Vector3(
+                bifurcation.position[0],
+                bifurcation.position[1],
+                bifurcation.position[2]
+            );
+
+            const sphereGeometry = new THREE.SphereGeometry(4, 16, 16);
+            const sphereMaterial = new THREE.MeshPhongMaterial({ 
+                color: branchColors.bifurcation,
+                emissive: 0x332200
+            });
+            const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            sphere.position.copy(position);
+            sphere.castShadow = true;
+            this.vesselGroup.add(sphere);
+        });
+
+        // Calculate optimal viewing angle
+        this.optimalAngles = this.calculateOptimalViewingAngle(branchVectors);
+        this.displayOptimalAngles(this.optimalAngles);
+
+        // Center camera on the reconstruction
+        if (allPoints.length > 0) {
+            const box = new THREE.Box3().setFromPoints(allPoints);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            
+            this.controls.target.copy(center);
+            this.camera.position.copy(center);
+            this.camera.position.z += Math.max(size.x, size.y, size.z) * 1.5;
+            
+            // Set to optimal viewing angle if available
+            if (this.optimalAngles && this.optimalAngles.optimalViewDirection) {
+                const optimalPos = center.clone().add(
+                    this.optimalAngles.optimalViewDirection.clone().multiplyScalar(
+                        Math.max(size.x, size.y, size.z) * 1.5
+                    )
+                );
+                this.camera.position.copy(optimalPos);
+            }
+            
+            this.controls.update();
+        }
+    }
+
+    calculateOptimalViewingAngle(branchVectors) {
+        if (branchVectors.length < 2) {
+            return null;
+        }
+
+        // Find main vessel and branches
+        const mainVessel = branchVectors.find(b => b.type === 'main_vessel');
+        const branch1 = branchVectors.find(b => b.type === 'branch_1');
+        const branch2 = branchVectors.find(b => b.type === 'branch_2');
+
+        if (!branch1 || !branch2) {
+            return null;
+        }
+
+        // Calculate the plane containing the bifurcation
+        const vec1 = branch1.vector.clone();
+        const vec2 = branch2.vector.clone();
+
+        // Cross product gives normal to the plane
+        const planeNormal = vec1.clone().cross(vec2).normalize();
+
+        // The optimal viewing direction is along the plane normal
+        const optimalViewDirection = planeNormal.clone();
+
+        // Calculate bifurcation angle
+        const bifurcationAngle = Math.acos(Math.max(-1, Math.min(1, vec1.dot(vec2)))) * (180 / Math.PI);
+
+        // Convert to C-arm angles (simplified conversion)
+        const laoRao = Math.atan2(optimalViewDirection.x, optimalViewDirection.z) * (180 / Math.PI);
+        const cranialCaudal = Math.asin(Math.max(-1, Math.min(1, optimalViewDirection.y))) * (180 / Math.PI);
+
+        return {
+            optimalViewDirection: optimalViewDirection,
+            bifurcationAngle: bifurcationAngle,
+            laoRao: Math.round(laoRao),
+            cranialCaudal: Math.round(cranialCaudal),
+            planeNormal: planeNormal,
+            branch1Vector: vec1,
+            branch2Vector: vec2
+        };
+    }
+
+    displayOptimalAngles(angles) {
+        const resultsDiv = document.querySelector('.reconstruction-results');
+        if (!resultsDiv || !angles) return;
+
+        // Remove existing optimal angles display
+        const existingOptimal = resultsDiv.querySelector('.optimal-angles');
+        if (existingOptimal) {
+            existingOptimal.remove();
+        }
+
+        // Create optimal angles display
+        const optimalDiv = document.createElement('div');
+        optimalDiv.className = 'optimal-angles';
+        optimalDiv.innerHTML = `
+            <h3>🎯 Optimal Viewing Angles</h3>
+            <div class="angle-recommendations">
+                <div class="angle-item">
+                    <span class="angle-label">LAO/RAO:</span>
+                    <span class="angle-value">${angles.laoRao > 0 ? 'LAO' : 'RAO'} ${Math.abs(angles.laoRao)}°</span>
+                </div>
+                <div class="angle-item">
+                    <span class="angle-label">Cranial/Caudal:</span>
+                    <span class="angle-value">${angles.cranialCaudal > 0 ? 'CRA' : 'CAU'} ${Math.abs(angles.cranialCaudal)}°</span>
+                </div>
+                <div class="angle-item">
+                    <span class="angle-label">Bifurcation Angle:</span>
+                    <span class="angle-value">${angles.bifurcationAngle.toFixed(1)}°</span>
+                </div>
+            </div>
+            <div class="view-controls">
+                <button onclick="tracker.setOptimalView()" class="btn btn-secondary">
+                    📐 Set Optimal View
+                </button>
+                <button onclick="tracker.resetView()" class="btn btn-secondary">
+                    🔄 Reset View
+                </button>
+            </div>
+        `;
+
+        resultsDiv.appendChild(optimalDiv);
+    }
+
+    setOptimalView() {
+        if (!this.optimalAngles || !this.camera || !this.controls) return;
+
+        const center = this.controls.target.clone();
+        const distance = this.camera.position.distanceTo(center);
+        
+        const optimalPos = center.clone().add(
+            this.optimalAngles.optimalViewDirection.clone().multiplyScalar(distance)
+        );
+        
+        // Smooth transition to optimal view
+        const startPos = this.camera.position.clone();
+        const duration = 1000; // 1 second
+        const startTime = Date.now();
+        
+        const animateToOptimal = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Smooth easing
+            const easeProgress = 1 - Math.pow(1 - progress, 3);
+            
+            this.camera.position.lerpVectors(startPos, optimalPos, easeProgress);
+            this.controls.update();
+            
+            if (progress < 1) {
+                requestAnimationFrame(animateToOptimal);
+            }
+        };
+        
+        animateToOptimal();
+    }
+
+    resetView() {
+        if (!this.camera || !this.controls) return;
+
+        const center = this.controls.target.clone();
+        const resetPos = center.clone().add(new THREE.Vector3(0, 0, 500));
+        
+        // Smooth transition to reset view
+        const startPos = this.camera.position.clone();
+        const duration = 1000;
+        const startTime = Date.now();
+        
+        const animateToReset = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            const easeProgress = 1 - Math.pow(1 - progress, 3);
+            
+            this.camera.position.lerpVectors(startPos, resetPos, easeProgress);
+            this.controls.update();
+            
+            if (progress < 1) {
+                requestAnimationFrame(animateToReset);
+            }
+        };
+        
+        animateToReset();
     }
     
     render3DVisualization(ctx, branches3D) {
+        // This method is now replaced by the Three.js implementation
+        // Keeping for backward compatibility
         const width = ctx.canvas.width;
         const height = ctx.canvas.height;
         
@@ -551,60 +876,10 @@ class ManualTracker {
         ctx.fillStyle = '#1a202c';
         ctx.fillRect(0, 0, width, height);
         
-        if (branches3D.length === 0) {
-            ctx.fillStyle = '#718096';
-            ctx.font = '16px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('No 3D data to display', width/2, height/2);
-            return;
-        }
-        
-        // Simple 3D projection
-        const centerX = width / 2;
-        const centerY = height / 2;
-        const scale = 0.5;
-        
-        branches3D.forEach((branch, index) => {
-            const color = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24'][index % 4];
-            
-            if (branch.points && branch.points.length > 1) {
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                
-                branch.points.forEach((point, i) => {
-                    // Simple orthographic projection (ignore Z for now)
-                    const x = centerX + point[0] * scale;
-                    const y = centerY + point[1] * scale;
-                    
-                    if (i === 0) {
-                        ctx.moveTo(x, y);
-                    } else {
-                        ctx.lineTo(x, y);
-                    }
-                });
-                
-                ctx.stroke();
-                
-                // Draw points
-                ctx.fillStyle = color;
-                branch.points.forEach(point => {
-                    const x = centerX + point[0] * scale;
-                    const y = centerY + point[1] * scale;
-                    
-                    ctx.beginPath();
-                    ctx.arc(x, y, 4, 0, 2 * Math.PI);
-                    ctx.fill();
-                });
-            }
-        });
-        
-        // Add labels
-        ctx.fillStyle = '#e2e8f0';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'left';
-        ctx.fillText('3D Vessel Reconstruction', 10, 20);
-        ctx.fillText(`${branches3D.length} branches reconstructed`, 10, 35);
+        ctx.fillStyle = '#718096';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('3D visualization active above', width/2, height/2);
     }
 }
 
