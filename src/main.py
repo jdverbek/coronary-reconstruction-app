@@ -41,6 +41,10 @@ def serve(path):
     if path == 'manual-tracking' or path == 'manual-tracking/':
         return send_from_directory(static_folder_path, 'manual-tracking.html')
     
+    # Serve simple tracking interface
+    if path == 'simple-tracking' or path == 'simple-tracking/':
+        return send_from_directory(static_folder_path, 'simple-tracking.html')
+    
     # Serve static files
     if path and os.path.exists(os.path.join(static_folder_path, path)):
         return send_from_directory(static_folder_path, path)
