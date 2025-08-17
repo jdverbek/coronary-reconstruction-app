@@ -59,11 +59,12 @@ python src/main.py
 
 1. Fork this repository to your GitHub account
 
-2. Create a new Web Service on [Render](https://render.com):
-   - Connect your GitHub repository
-   - Set the build command: `pip install -r requirements.txt`
-   - Set the start command: `python src/main.py`
-   - Set environment variables if needed
+2.  Create a new Web Service on [Render](https://render.com):
+    
+    *   Connect your GitHub repository
+    *   Set the build command: `pip install -r requirements.txt`
+    *   Set the start command: `gunicorn --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --chdir . src.wsgi:app`
+    *   Set environment variables if needed
 
 3. Deploy and access your application via the provided Render URL
 

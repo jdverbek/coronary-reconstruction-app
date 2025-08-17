@@ -56,7 +56,7 @@ Once your repository is on GitHub, you can add this deploy button to your README
    - **Name**: `coronary-reconstruction-app`
    - **Environment**: `Python 3`
    - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `python src/main.py`
+   - **Start Command**: `gunicorn --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --chdir . src.wsgi:app`
    - **Instance Type**: Choose based on your needs (Free tier available)
 
 4. **Environment Variables** (Optional)
