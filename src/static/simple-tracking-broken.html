@@ -598,6 +598,13 @@
                     return this.project3DTo2D(rotated, width, height);
                 });
                 
+                // Sort by depth for proper rendering
+                const pointsWithDepth = projectedPoints.map((point, index) => ({
+                    point,
+                    depth: point[2],
+                    index
+                }));
+                
                 // Draw vessel line (do NOT connect last point to first)
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 4;
@@ -617,8 +624,8 @@
                 ctx.stroke();
                 
                 // Draw points with depth-based sizing
-                projectedPoints.forEach((point, index) => {
-                    const [x, y, depth] = point;
+                pointsWithDepth.forEach(({point, depth, index}) => {
+                    const [x, y] = point;
                     const size = Math.max(2, 6 - depth * 0.01); // Smaller points for farther depth
                     const alpha = Math.max(0.3, 1 - Math.abs(depth) * 0.002); // Fade with depth
                     
@@ -628,6 +635,17 @@
                     ctx.fill();
                 });
             }
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new SimpleTracker();
+        });
+    </script>
+</body>
+</html>
+
+
             
             calculateOptimalBifurcationAngle() {
                 if (!this.vesselData) return;
