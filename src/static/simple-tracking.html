@@ -169,6 +169,52 @@
             text-align: center;
         }
         
+        .live-angles {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .alignment-controls {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+        }
+        
+        .alignment-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+        
+        .alignment-btn:hover {
+            background: #218838;
+            transform: translateY(-1px);
+        }
+        
+        .alignment-btn.active {
+            background: #dc3545;
+        }
+        
+        .segment-info {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #667eea;
+        }
+        
         .angle-item {
             display: inline-block;
             margin: 0 15px;
@@ -236,6 +282,26 @@
         
         <div id="results" class="results" style="display: none;">
             <h3>📊 Results</h3>
+            
+            <div class="alignment-controls">
+                <h4>🎯 Manual Segment Alignment</h4>
+                <div>
+                    <button class="alignment-btn" onclick="tracker.setAlignmentMode('main')">Align Main Vessel (LM)</button>
+                    <button class="alignment-btn" onclick="tracker.setAlignmentMode('branch1')">Align Branch 1 (LAD)</button>
+                    <button class="alignment-btn" onclick="tracker.setAlignmentMode('branch2')">Align Branch 2 (LCX)</button>
+                    <button class="alignment-btn" onclick="tracker.setAlignmentMode('none')">🔄 Reset Alignment</button>
+                </div>
+                <div class="segment-info">
+                    <div id="alignmentStatus">Click a vessel segment to start manual alignment</div>
+                </div>
+            </div>
+            
+            <div class="live-angles" id="liveAngles">
+                <span>Current View: </span>
+                <span id="currentLAO">LAO 0°</span> | 
+                <span id="currentCRA">CRA 0°</span>
+            </div>
+            
             <div class="canvas-container">
                 <canvas id="resultCanvas" width="500" height="400"></canvas>
                 <div class="rotation-controls">
@@ -268,6 +334,12 @@
                 this.isDragging = false;
                 this.lastMouseX = 0;
                 this.lastMouseY = 0;
+                this.alignmentMode = 'none';
+                this.manualAlignments = {
+                    main: [],
+                    branch1: [],
+                    branch2: []
+                };
                 this.setupEventListeners();
             }
             
@@ -280,11 +352,12 @@
                 fileInput.addEventListener('change', (e) => this.handleFiles(e.target.files));
                 processBtn.addEventListener('click', () => this.processImages());
                 
-                // Canvas mouse controls for rotation
+                // Canvas mouse controls for rotation and alignment
                 canvas.addEventListener('mousedown', (e) => this.startDrag(e));
                 canvas.addEventListener('mousemove', (e) => this.drag(e));
                 canvas.addEventListener('mouseup', () => this.endDrag());
                 canvas.addEventListener('mouseleave', () => this.endDrag());
+                canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
                 
                 // Touch controls for mobile
                 canvas.addEventListener('touchstart', (e) => this.startDrag(e.touches[0]));
@@ -330,6 +403,7 @@
                 this.lastMouseY = e.clientY;
                 
                 this.redrawVisualization();
+                this.updateLiveAngles(); // Update angles in real-time
             }
             
             endDrag() {
@@ -339,16 +413,19 @@
             rotateX(angle) {
                 this.rotationX += angle;
                 this.redrawVisualization();
+                this.updateLiveAngles();
             }
             
             rotateY(angle) {
                 this.rotationY += angle;
                 this.redrawVisualization();
+                this.updateLiveAngles();
             }
             
             rotateZ(angle) {
                 this.rotationZ += angle;
                 this.redrawVisualization();
+                this.updateLiveAngles();
             }
             
             resetRotation() {
@@ -356,6 +433,7 @@
                 this.rotationY = 0;
                 this.rotationZ = 0;
                 this.redrawVisualization();
+                this.updateLiveAngles();
             }
             
             handleFiles(files) {
@@ -484,6 +562,9 @@
                 
                 // Draw visualization
                 this.redrawVisualization();
+                
+                // Initialize live angles display
+                this.updateLiveAngles();
                 
                 // Calculate and show optimal bifurcation angle
                 this.calculateOptimalBifurcationAngle();
@@ -755,6 +836,166 @@
                 this.rotationZ = 0;
                 
                 this.redrawVisualization();
+            }
+        }
+        
+        // Global reference for button callbacks
+        let tracker;
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            tracker = new SimpleTracker();
+        });
+    </script>
+</body>
+</html>
+
+
+            
+            // Manual alignment methods
+            setAlignmentMode(mode) {
+                this.alignmentMode = mode;
+                this.updateAlignmentStatus();
+                this.updateAlignmentButtons();
+            }
+            
+            updateAlignmentStatus() {
+                const statusDiv = document.getElementById('alignmentStatus');
+                if (!statusDiv) return;
+                
+                switch(this.alignmentMode) {
+                    case 'main':
+                        statusDiv.innerHTML = '🔴 Click on canvas to align Main Vessel (LM) points';
+                        break;
+                    case 'branch1':
+                        statusDiv.innerHTML = '🟢 Click on canvas to align Branch 1 (LAD) points';
+                        break;
+                    case 'branch2':
+                        statusDiv.innerHTML = '🔵 Click on canvas to align Branch 2 (LCX) points';
+                        break;
+                    default:
+                        statusDiv.innerHTML = 'Click a vessel segment to start manual alignment';
+                }
+            }
+            
+            updateAlignmentButtons() {
+                const buttons = document.querySelectorAll('.alignment-btn');
+                buttons.forEach(btn => btn.classList.remove('active'));
+                
+                if (this.alignmentMode !== 'none') {
+                    const activeBtn = document.querySelector(`[onclick="tracker.setAlignmentMode('${this.alignmentMode}')"]`);
+                    if (activeBtn) activeBtn.classList.add('active');
+                }
+            }
+            
+            handleCanvasClick(e) {
+                if (this.alignmentMode === 'none' || !this.vesselData) return;
+                
+                const canvas = document.getElementById('resultCanvas');
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // Convert 2D click to 3D point (simplified)
+                const point3D = this.convert2DTo3D(x, y, canvas.width, canvas.height);
+                
+                // Add point to current alignment
+                this.manualAlignments[this.alignmentMode].push(point3D);
+                
+                // Update vessel data with manual alignment
+                this.applyManualAlignment();
+                
+                // Redraw
+                this.redrawVisualization();
+                
+                // Update status
+                const count = this.manualAlignments[this.alignmentMode].length;
+                const statusDiv = document.getElementById('alignmentStatus');
+                statusDiv.innerHTML += ` (${count} points added)`;
+            }
+            
+            convert2DTo3D(x, y, width, height) {
+                // Simple conversion from 2D click to 3D space
+                // This is a simplified approach - in real implementation would need proper inverse projection
+                const centerX = width / 2;
+                const centerY = height / 2;
+                const scale = 2;
+                
+                const x3D = (x - centerX) / scale;
+                const y3D = (centerY - y) / scale;
+                const z3D = 0; // Place on Z=0 plane initially
+                
+                return [x3D, y3D, z3D];
+            }
+            
+            applyManualAlignment() {
+                if (!this.vesselData) return;
+                
+                // Apply manual alignments to vessel data
+                if (this.manualAlignments.main.length > 0) {
+                    this.vesselData.mainVessel = [...this.manualAlignments.main];
+                }
+                if (this.manualAlignments.branch1.length > 0) {
+                    this.vesselData.branch1 = [...this.manualAlignments.branch1];
+                }
+                if (this.manualAlignments.branch2.length > 0) {
+                    this.vesselData.branch2 = [...this.manualAlignments.branch2];
+                }
+                
+                // Recalculate optimal angles
+                this.calculateOptimalBifurcationAngle();
+            }
+            
+            // Real-time angle conversion
+            updateLiveAngles() {
+                const laoElement = document.getElementById('currentLAO');
+                const craElement = document.getElementById('currentCRA');
+                
+                if (!laoElement || !craElement) return;
+                
+                // Convert current 3D rotation to clinical C-arm angles
+                const clinicalAngles = this.convertRotationToClinicalAngles();
+                
+                // Update display
+                laoElement.textContent = clinicalAngles.laoRao > 0 ? 
+                    `LAO ${Math.abs(clinicalAngles.laoRao).toFixed(1)}°` : 
+                    `RAO ${Math.abs(clinicalAngles.laoRao).toFixed(1)}°`;
+                    
+                craElement.textContent = clinicalAngles.cranialCaudal > 0 ? 
+                    `CRA ${Math.abs(clinicalAngles.cranialCaudal).toFixed(1)}°` : 
+                    `CAU ${Math.abs(clinicalAngles.cranialCaudal).toFixed(1)}°`;
+            }
+            
+            convertRotationToClinicalAngles() {
+                // Convert 3D rotation angles to clinical C-arm angles
+                // This is a simplified mapping - real implementation would need proper coordinate system conversion
+                
+                // LAO/RAO is primarily Y rotation (horizontal)
+                let laoRao = -this.rotationY; // Negative because of coordinate system
+                
+                // Cranial/Caudal is primarily X rotation (vertical)
+                let cranialCaudal = this.rotationX;
+                
+                // Normalize to clinical ranges
+                laoRao = Math.max(-90, Math.min(50, laoRao));
+                cranialCaudal = Math.max(-40, Math.min(40, cranialCaudal));
+                
+                return {
+                    laoRao: laoRao,
+                    cranialCaudal: cranialCaudal
+                };
+            }
+            
+            setOptimalView() {
+                if (!this.optimalAngles) return;
+                
+                // Set rotation to show optimal bifurcation view
+                this.rotationX = -this.optimalAngles.cranialCaudal;
+                this.rotationY = this.optimalAngles.laoRao;
+                this.rotationZ = 0;
+                
+                this.redrawVisualization();
+                this.updateLiveAngles();
             }
         }
         
