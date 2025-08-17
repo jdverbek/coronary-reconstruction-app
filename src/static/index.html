@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coronary Artery 3D Reconstruction</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-heartbeat"></i>
+                    <h1>Coronary 3D Reconstruction</h1>
+                </div>
+                <p class="subtitle">Advanced medical imaging analysis for coronary artery visualization</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-upload"></i> Image Upload</h2>
+                    <p>Upload medical images for coronary artery analysis</p>
+                </div>
+                
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <h3>Drag & Drop Images Here</h3>
+                        <p>or <span class="browse-link">browse files</span></p>
+                        <input type="file" id="fileInput" multiple accept="image/*" hidden>
+                    </div>
+                </div>
+
+                <div class="upload-options">
+                    <div class="option-group">
+                        <label>Analysis Type:</label>
+                        <div class="radio-group">
+                            <label class="radio-option">
+                                <input type="radio" name="analysisType" value="single" checked>
+                                <span>Single Image Analysis</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="analysisType" value="multi">
+                                <span>Multi-View 3D Reconstruction</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Angle Configuration (for multi-view) -->
+            <section class="angle-section" id="angleSection" style="display: none;">
+                <div class="section-header">
+                    <h2><i class="fas fa-cog"></i> C-Arm Angles Configuration</h2>
+                    <p>Configure viewing angles for each image</p>
+                </div>
+                
+                <div class="angle-config" id="angleConfig">
+                    <!-- Angle inputs will be dynamically generated -->
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section" id="resultsSection" style="display: none;">
+                <div class="section-header">
+                    <h2><i class="fas fa-chart-line"></i> Analysis Results</h2>
+                    <p>Vessel extraction and 3D reconstruction results</p>
+                </div>
+                
+                <div class="results-content">
+                    <div class="results-grid">
+                        <!-- Single Image Results -->
+                        <div class="result-card" id="singleResults" style="display: none;">
+                            <h3>Vessel Analysis</h3>
+                            <div class="image-comparison">
+                                <div class="image-container">
+                                    <h4>Original Image</h4>
+                                    <img id="originalImage" alt="Original">
+                                </div>
+                                <div class="image-container">
+                                    <h4>Vessel Overlay</h4>
+                                    <img id="overlayImage" alt="Vessel Overlay">
+                                </div>
+                            </div>
+                            <div class="analysis-stats" id="analysisStats">
+                                <!-- Stats will be populated dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Multi-View Results -->
+                        <div class="result-card" id="multiResults" style="display: none;">
+                            <h3>3D Reconstruction</h3>
+                            <div class="reconstruction-info" id="reconstructionInfo">
+                                <!-- 3D reconstruction info will be populated -->
+                            </div>
+                            <div class="visualization-container">
+                                <canvas id="threeDCanvas" width="600" height="400"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <h3>Processing Images...</h3>
+                <p id="loadingMessage">Analyzing coronary arteries</p>
+            </div>
+        </div>
+
+        <!-- Error Modal -->
+        <div class="modal" id="errorModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-exclamation-triangle"></i> Error</h3>
+                    <button class="close-btn" onclick="closeModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p id="errorMessage"></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" onclick="closeModal()">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
