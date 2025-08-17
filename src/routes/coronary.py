@@ -147,21 +147,48 @@ def reconstruct_3d():
                 return jsonify({'error': 'Invalid angle format. Need lao_rao and cranial_caudal'}), 400
             angles.append(angle_set)
         
-        # Perform 3D reconstruction with timeout handling
-        import signal
+        # Perform 3D reconstruction with timeout handling using threading
+        from threading import Timer, Event
+        import threading
         
-        def timeout_handler(signum, frame):
-            raise TimeoutError("3D reconstruction timed out")
+        timeout_occurred = Event()
+        result = None
+        exception_occurred = None
+        
+        def timeout_handler():
+            timeout_occurred.set()
+        
+        def reconstruction_worker():
+            nonlocal result, exception_occurred
+            try:
+                result = reconstructor.reconstruct_from_views(images, angles)
+            except Exception as e:
+                exception_occurred = e
         
         try:
             # Set timeout for the entire reconstruction process (90 seconds)
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(90)
+            timer = Timer(90, timeout_handler)
+            timer.start()
             
-            result = reconstructor.reconstruct_from_views(images, angles)
+            # Run reconstruction in separate thread
+            worker_thread = threading.Thread(target=reconstruction_worker)
+            worker_thread.start()
+            worker_thread.join(timeout=95)  # Wait slightly longer than timer
             
-            # Clear the alarm
-            signal.alarm(0)
+            # Cancel timer
+            timer.cancel()
+            
+            # Check for timeout
+            if timeout_occurred.is_set():
+                raise TimeoutError("3D reconstruction timed out")
+            
+            # Check for exceptions in worker thread
+            if exception_occurred:
+                raise exception_occurred
+            
+            # Check if result was obtained
+            if result is None:
+                raise TimeoutError("3D reconstruction timed out")
             
         except TimeoutError:
             logger.error("3D reconstruction timed out after 90 seconds")
@@ -170,7 +197,6 @@ def reconstruct_3d():
                 'suggestion': 'For better performance, use 2-4 images with resolution under 800x800 pixels.'
             }), 408  # Request Timeout
         except Exception as e:
-            signal.alarm(0)  # Clear alarm on any exception
             raise e
         
         # Convert result to JSON-serializable format
