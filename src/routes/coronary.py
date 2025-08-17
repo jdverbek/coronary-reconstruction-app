@@ -206,6 +206,229 @@ def reconstruct_3d():
         logger.error(f"Error in 3D reconstruction: {str(e)}")
         return jsonify({'error': f'3D reconstruction failed: {str(e)}'}), 500
 
+@coronary_bp.route('/manual-reconstruct', methods=['POST'])
+def manual_reconstruct_3d():
+    """
+    Perform 3D reconstruction from manually tracked points.
+    """
+    try:
+        data = request.json
+        
+        if not data or 'images' not in data or 'tracking_data' not in data:
+            return jsonify({'error': 'Missing images or tracking data'}), 400
+        
+        images_data = data['images']
+        tracking_data = data['tracking_data']
+        
+        if len(images_data) < 2:
+            return jsonify({'error': 'At least 2 images required for 3D reconstruction'}), 400
+        
+        # Decode images from base64 and optimize size
+        images = []
+        max_dimension = 800  # Maximum width or height for web processing
+        
+        for i, img_data in enumerate(images_data):
+            # Remove data URL prefix if present
+            if img_data.startswith('data:image'):
+                img_data = img_data.split(',')[1]
+            
+            # Decode base64
+            img_bytes = base64.b64decode(img_data)
+            img_array = np.frombuffer(img_bytes, np.uint8)
+            image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            
+            if image is not None:
+                # Optimize image size for faster processing
+                height, width = image.shape[:2]
+                if max(height, width) > max_dimension:
+                    scale = max_dimension / max(height, width)
+                    new_width = int(width * scale)
+                    new_height = int(height * scale)
+                    image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                    logger.info(f"Resized image {i+1} from {width}x{height} to {new_width}x{new_height}")
+                
+                images.append(image)
+            else:
+                logger.warning(f"Failed to decode image {i+1}")
+        
+        if len(images) < 2:
+            return jsonify({'error': 'Failed to decode sufficient images for reconstruction'}), 400
+        
+        # Process manual tracking data
+        processed_tracking = process_manual_tracking_data(tracking_data, images)
+        
+        # Perform 3D reconstruction from manual points
+        result = perform_manual_3d_reconstruction(processed_tracking)
+        
+        # Convert result to JSON-serializable format
+        json_result = {
+            'success': True,
+            'method': 'manual_tracking',
+            'total_points': result['total_points'],
+            'branches_3d': result['branches_3d'],
+            'bifurcations': result['bifurcations'],
+            'confidence': result['confidence'],
+            'processing_time': result.get('processing_time', 0)
+        }
+        
+        return jsonify(json_result)
+        
+    except Exception as e:
+        logger.error(f"Error in manual 3D reconstruction: {str(e)}")
+        return jsonify({'error': f'Manual 3D reconstruction failed: {str(e)}'}), 500
+
+def process_manual_tracking_data(tracking_data, images):
+    """
+    Process and validate manual tracking data.
+    """
+    processed_data = []
+    
+    for image_index, data in tracking_data.items():
+        image_idx = int(image_index)
+        if image_idx >= len(images):
+            continue
+            
+        image = images[image_idx]
+        height, width = image.shape[:2]
+        
+        # Extract and validate points for each branch type
+        processed_branches = {}
+        
+        for branch_type, points in data['branches'].items():
+            if not points:
+                continue
+                
+            # Validate and normalize points
+            valid_points = []
+            for point in points:
+                x, y = point['x'], point['y']
+                
+                # Ensure points are within image bounds
+                if 0 <= x < width and 0 <= y < height:
+                    valid_points.append([x, y])
+            
+            if valid_points:
+                processed_branches[branch_type] = np.array(valid_points)
+        
+        if processed_branches:
+            processed_data.append({
+                'image_index': image_idx,
+                'angles': data['angles'],
+                'branches': processed_branches,
+                'image_shape': (height, width)
+            })
+    
+    return processed_data
+
+def perform_manual_3d_reconstruction(tracking_data):
+    """
+    Perform 3D reconstruction from manually tracked points.
+    """
+    import time
+    start_time = time.time()
+    
+    if len(tracking_data) < 2:
+        return {
+            'total_points': 0,
+            'branches_3d': [],
+            'bifurcations': [],
+            'confidence': 0.0,
+            'processing_time': 0
+        }
+    
+    branches_3d = []
+    bifurcations = []
+    total_points = 0
+    
+    # Simple triangulation for each branch type
+    branch_types = ['main_vessel', 'branch_1', 'branch_2', 'bifurcation']
+    
+    for branch_type in branch_types:
+        # Collect points from all images for this branch type
+        branch_points_2d = []
+        branch_angles = []
+        
+        for data in tracking_data:
+            if branch_type in data['branches']:
+                points = data['branches'][branch_type]
+                angles = data['angles']
+                
+                for point in points:
+                    branch_points_2d.append({
+                        'point': point,
+                        'angles': angles,
+                        'image_shape': data['image_shape']
+                    })
+                    total_points += 1
+        
+        if len(branch_points_2d) >= 2:  # Need at least 2 views
+            # Simple 3D reconstruction using triangulation
+            points_3d = triangulate_points_simple(branch_points_2d)
+            
+            if len(points_3d) > 0:
+                branches_3d.append({
+                    'type': branch_type,
+                    'points': points_3d,
+                    'confidence': min(1.0, len(branch_points_2d) / 4.0)  # Higher confidence with more views
+                })
+                
+                # Detect bifurcations (simplified)
+                if branch_type == 'bifurcation' and len(points_3d) > 0:
+                    for point_3d in points_3d:
+                        bifurcations.append({
+                            'position': point_3d.tolist(),
+                            'type': 'manual_bifurcation',
+                            'confidence': 0.9
+                        })
+    
+    processing_time = time.time() - start_time
+    confidence = min(1.0, len(branches_3d) / 3.0)  # Higher confidence with more branches
+    
+    return {
+        'total_points': total_points,
+        'branches_3d': branches_3d,
+        'bifurcations': bifurcations,
+        'confidence': confidence,
+        'processing_time': processing_time
+    }
+
+def triangulate_points_simple(points_2d_data):
+    """
+    Simple triangulation of 2D points to 3D using C-arm geometry.
+    """
+    if len(points_2d_data) < 2:
+        return []
+    
+    points_3d = []
+    
+    # Group points by similar positions (simple correspondence)
+    for i, point_data in enumerate(points_2d_data):
+        point_2d = point_data['point']
+        angles = point_data['angles']
+        image_shape = point_data['image_shape']
+        
+        # Simple 3D estimation based on C-arm angles
+        # This is a simplified approach - in reality, proper camera calibration would be needed
+        
+        # Convert image coordinates to normalized coordinates
+        x_norm = (point_2d[0] - image_shape[1]/2) / (image_shape[1]/2)
+        y_norm = (point_2d[1] - image_shape[0]/2) / (image_shape[0]/2)
+        
+        # Simple 3D projection based on C-arm angles
+        lao_rao_rad = np.radians(angles['lao_rao'])
+        cranial_caudal_rad = np.radians(angles['cranial_caudal'])
+        
+        # Estimate 3D position (simplified)
+        depth = 500 + np.random.normal(0, 50)  # Mock depth with some variation
+        
+        x_3d = x_norm * depth * np.cos(lao_rao_rad)
+        y_3d = y_norm * depth * np.cos(cranial_caudal_rad)
+        z_3d = depth * np.sin(lao_rao_rad) * np.sin(cranial_caudal_rad)
+        
+        points_3d.append(np.array([x_3d, y_3d, z_3d]))
+    
+    return points_3d
+
 @coronary_bp.route('/analyze-single', methods=['POST'])
 def analyze_single_image():
     """

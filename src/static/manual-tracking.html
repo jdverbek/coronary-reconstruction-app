@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual Vessel Tracking - Coronary 3D Reconstruction</title>
+    <link rel="stylesheet" href="manual-tracking.css">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1>
+                    <span class="icon">❤️</span>
+                    Manual Vessel Tracking
+                </h1>
+                <p>Precisely track coronary vessel branches across multiple viewing angles</p>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Image Upload Section -->
+            <div class="upload-section" id="uploadSection">
+                <div class="upload-card">
+                    <h2>📁 Upload Medical Images</h2>
+                    <p>Upload 2-6 coronary angiography images from different C-arm angles</p>
+                    
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📤</div>
+                        <p>Drag & Drop Images Here</p>
+                        <p class="upload-subtitle">or <span class="browse-link">browse files</span></p>
+                        <input type="file" id="fileInput" multiple accept="image/*" style="display: none;">
+                    </div>
+                    
+                    <div class="uploaded-images" id="uploadedImages"></div>
+                    
+                    <button class="btn btn-primary" id="startTrackingBtn" style="display: none;">
+                        Start Manual Tracking
+                    </button>
+                </div>
+            </div>
+
+            <!-- Manual Tracking Interface -->
+            <div class="tracking-interface" id="trackingInterface" style="display: none;">
+                <div class="tracking-controls">
+                    <div class="control-panel">
+                        <h3>🎯 Tracking Controls</h3>
+                        
+                        <div class="image-selector">
+                            <label>Current Image:</label>
+                            <select id="imageSelector">
+                                <!-- Options populated dynamically -->
+                            </select>
+                        </div>
+                        
+                        <div class="angle-inputs">
+                            <label>C-arm Angles:</label>
+                            <div class="angle-group">
+                                <input type="number" id="laoRaoAngle" placeholder="LAO/RAO" min="-90" max="50" step="1">
+                                <span>°</span>
+                                <input type="number" id="cranialCaudalAngle" placeholder="Cranial/Caudal" min="-40" max="40" step="1">
+                                <span>°</span>
+                            </div>
+                        </div>
+                        
+                        <div class="tracking-mode">
+                            <label>Tracking Mode:</label>
+                            <select id="trackingMode">
+                                <option value="main_vessel">Main Vessel</option>
+                                <option value="branch_1">Branch 1</option>
+                                <option value="branch_2">Branch 2</option>
+                                <option value="bifurcation">Bifurcation Point</option>
+                            </select>
+                        </div>
+                        
+                        <div class="zoom-controls">
+                            <label>Zoom:</label>
+                            <button class="btn btn-small" id="zoomInBtn">🔍+</button>
+                            <span id="zoomLevel">100%</span>
+                            <button class="btn btn-small" id="zoomOutBtn">🔍-</button>
+                            <button class="btn btn-small" id="resetZoomBtn">Reset</button>
+                        </div>
+                        
+                        <div class="point-controls">
+                            <button class="btn btn-secondary" id="undoPointBtn">↶ Undo Point</button>
+                            <button class="btn btn-secondary" id="clearPointsBtn">🗑️ Clear All</button>
+                        </div>
+                        
+                        <div class="tracking-stats">
+                            <div class="stat">
+                                <span class="stat-label">Points:</span>
+                                <span class="stat-value" id="pointCount">0</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Images:</span>
+                                <span class="stat-value" id="imageCount">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="image-viewer">
+                    <div class="viewer-container" id="viewerContainer">
+                        <canvas id="trackingCanvas"></canvas>
+                        <div class="viewer-overlay">
+                            <div class="coordinates" id="coordinates">x: 0, y: 0</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reconstruction-panel">
+                    <h3>🏗️ 3D Reconstruction</h3>
+                    <div class="reconstruction-status" id="reconstructionStatus">
+                        <p>Track vessel points across multiple images to enable 3D reconstruction</p>
+                    </div>
+                    
+                    <button class="btn btn-success" id="reconstruct3DBtn" disabled>
+                        Generate 3D Model
+                    </button>
+                    
+                    <div class="reconstruction-results" id="reconstructionResults" style="display: none;">
+                        <canvas id="reconstruction3D" width="400" height="300"></canvas>
+                        <div class="results-info">
+                            <h4>Reconstruction Results</h4>
+                            <div class="result-stats" id="resultStats"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="manual-tracking.js"></script>
+</body>
+</html>
+

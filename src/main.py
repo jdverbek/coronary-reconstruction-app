@@ -35,19 +35,22 @@ with app.app_context():
 def serve(path):
     static_folder_path = app.static_folder
     if static_folder_path is None:
-            return "Static folder not configured", 404
-
-    if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
+        return "Static folder not configured", 404
+    
+    # Serve manual tracking interface
+    if path == 'manual-tracking' or path == 'manual-tracking/':
+        return send_from_directory(static_folder_path, 'manual-tracking.html')
+    
+    # Serve static files
+    if path and os.path.exists(os.path.join(static_folder_path, path)):
         return send_from_directory(static_folder_path, path)
-    else:
-        index_path = os.path.join(static_folder_path, 'index.html')
-        if os.path.exists(index_path):
-            return send_from_directory(static_folder_path, 'index.html')
-        else:
-            return "index.html not found", 404
+    
+    # Default to index.html
+    return send_from_directory(static_folder_path, 'index.html')
 
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
     app.run(host='0.0.0.0', port=port, debug=debug)
+
