@@ -114,14 +114,14 @@ class CoronaryReconstructor:
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
             enhanced = clahe.apply(gray)
             
-            # Apply Frangi filter with progress logging
-            logger.debug("Applying Frangi filter...")
+            # Apply Frangi filter with optimized parameters for web demo
+            logger.debug("Applying optimized Frangi filter...")
             vesselness = frangi(enhanced, 
-                              sigmas=range(1, 6), 
+                              sigmas=range(1, 4),  # Reduced from range(1, 6)
                               black_ridges=True,  # For dark vessels
                               alpha=0.5,
                               beta=0.5,
-                              gamma=15)
+                              gamma=10)  # Reduced from 15
             
             # Normalize and threshold
             if vesselness.max() > 0:
@@ -328,17 +328,27 @@ class CoronaryReconstructor:
             self.projection_matrices.append(P)
             logger.debug(f"Calibrated view {i+1}/{len(images)}")
         
-        # Extract vessel trees from all images in parallel
+        # Extract vessel trees from all images with optimized parallel processing
         vessel_trees = []
         all_branches = []
         
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        # Use fewer workers for web deployment to reduce memory usage
+        max_workers = min(2, len(images))  # Reduced from 4
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(self.extract_vessel_centerlines, img) for img in images]
             for i, future in enumerate(futures):
-                vessel_tree = future.result()
-                vessel_trees.append(vessel_tree)
-                all_branches.append(vessel_tree['branches'])
-                logger.info(f"Extracted vessels from view {i+1}: {len(vessel_tree['branches'])} branches")
+                try:
+                    # Add timeout to prevent hanging
+                    vessel_tree = future.result(timeout=30)  # 30 second timeout per image
+                    vessel_trees.append(vessel_tree)
+                    all_branches.append(vessel_tree['branches'])
+                    logger.info(f"Extracted vessels from view {i+1}: {len(vessel_tree['branches'])} branches")
+                except Exception as e:
+                    logger.warning(f"Failed to process view {i+1}: {e}")
+                    # Add empty result to maintain consistency
+                    vessel_trees.append({'branches': [], 'tree': None, 'bifurcations': []})
+                    all_branches.append([])
         
         # Reconstruct branches in 3D
         branches_3d = self._reconstruct_branches_3d(all_branches)

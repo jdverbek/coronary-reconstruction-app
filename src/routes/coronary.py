@@ -109,9 +109,11 @@ def reconstruct_3d():
         if len(images_data) != len(angles_data):
             return jsonify({'error': 'Number of images must match number of angle sets'}), 400
         
-        # Decode images from base64
+        # Decode images from base64 and optimize size
         images = []
-        for img_data in images_data:
+        max_dimension = 800  # Maximum width or height for web processing
+        
+        for i, img_data in enumerate(images_data):
             # Remove data URL prefix if present
             if img_data.startswith('data:image'):
                 img_data = img_data.split(',')[1]
@@ -122,7 +124,21 @@ def reconstruct_3d():
             image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
             
             if image is not None:
+                # Optimize image size for faster processing
+                height, width = image.shape[:2]
+                if max(height, width) > max_dimension:
+                    scale = max_dimension / max(height, width)
+                    new_width = int(width * scale)
+                    new_height = int(height * scale)
+                    image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                    logger.info(f"Resized image {i+1} from {width}x{height} to {new_width}x{new_height}")
+                
                 images.append(image)
+            else:
+                logger.warning(f"Failed to decode image {i+1}")
+        
+        if len(images) < 2:
+            return jsonify({'error': 'Failed to decode sufficient images for reconstruction'}), 400
         
         # Validate angles format
         angles = []
@@ -131,8 +147,31 @@ def reconstruct_3d():
                 return jsonify({'error': 'Invalid angle format. Need lao_rao and cranial_caudal'}), 400
             angles.append(angle_set)
         
-        # Perform 3D reconstruction
-        result = reconstructor.reconstruct_from_views(images, angles)
+        # Perform 3D reconstruction with timeout handling
+        import signal
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError("3D reconstruction timed out")
+        
+        try:
+            # Set timeout for the entire reconstruction process (90 seconds)
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(90)
+            
+            result = reconstructor.reconstruct_from_views(images, angles)
+            
+            # Clear the alarm
+            signal.alarm(0)
+            
+        except TimeoutError:
+            logger.error("3D reconstruction timed out after 90 seconds")
+            return jsonify({
+                'error': '3D reconstruction timed out. Try with fewer images or smaller image sizes.',
+                'suggestion': 'For better performance, use 2-4 images with resolution under 800x800 pixels.'
+            }), 408  # Request Timeout
+        except Exception as e:
+            signal.alarm(0)  # Clear alarm on any exception
+            raise e
         
         # Convert result to JSON-serializable format
         json_result = {
