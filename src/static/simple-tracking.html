@@ -122,12 +122,72 @@
         .canvas-container {
             text-align: center;
             margin: 20px 0;
+            position: relative;
         }
         
         #resultCanvas {
             border: 1px solid #ddd;
             border-radius: 10px;
             background: #2a2a3a;
+            cursor: grab;
+        }
+        
+        #resultCanvas:active {
+            cursor: grabbing;
+        }
+        
+        .rotation-controls {
+            margin: 15px 0;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .rotation-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .rotation-btn:hover {
+            background: #764ba2;
+            transform: translateY(-1px);
+        }
+        
+        .angle-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            text-align: center;
+        }
+        
+        .angle-item {
+            display: inline-block;
+            margin: 0 15px;
+            padding: 8px 15px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .angle-label {
+            font-size: 12px;
+            opacity: 0.8;
+            display: block;
+        }
+        
+        .angle-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #ffd93d;
         }
         
         .stats {
@@ -177,7 +237,21 @@
         <div id="results" class="results" style="display: none;">
             <h3>📊 Results</h3>
             <div class="canvas-container">
-                <canvas id="resultCanvas" width="400" height="300"></canvas>
+                <canvas id="resultCanvas" width="500" height="400"></canvas>
+                <div class="rotation-controls">
+                    <button class="rotation-btn" onclick="tracker.rotateX(-10)">↑ Rotate X-</button>
+                    <button class="rotation-btn" onclick="tracker.rotateX(10)">↓ Rotate X+</button>
+                    <button class="rotation-btn" onclick="tracker.rotateY(-10)">← Rotate Y-</button>
+                    <button class="rotation-btn" onclick="tracker.rotateY(10)">→ Rotate Y+</button>
+                    <button class="rotation-btn" onclick="tracker.rotateZ(-10)">↺ Rotate Z-</button>
+                    <button class="rotation-btn" onclick="tracker.rotateZ(10)">↻ Rotate Z+</button>
+                    <button class="rotation-btn" onclick="tracker.resetRotation()">🔄 Reset</button>
+                    <button class="rotation-btn" onclick="tracker.setOptimalView()" style="background: #ffd93d; color: #333;">🎯 Optimal View</button>
+                </div>
+            </div>
+            <div id="angleDisplay" class="angle-display" style="display: none;">
+                <h4>🎯 Optimal Bifurcation Viewing Angle</h4>
+                <div id="optimalAngles"></div>
             </div>
             <div id="stats" class="stats"></div>
         </div>
@@ -187,6 +261,13 @@
         class SimpleTracker {
             constructor() {
                 this.images = [];
+                this.rotationX = 0;
+                this.rotationY = 0;
+                this.rotationZ = 0;
+                this.vesselData = null;
+                this.isDragging = false;
+                this.lastMouseX = 0;
+                this.lastMouseY = 0;
                 this.setupEventListeners();
             }
             
@@ -194,9 +275,24 @@
                 const fileInput = document.getElementById('fileInput');
                 const uploadArea = document.querySelector('.upload-area');
                 const processBtn = document.getElementById('processBtn');
+                const canvas = document.getElementById('resultCanvas');
                 
                 fileInput.addEventListener('change', (e) => this.handleFiles(e.target.files));
                 processBtn.addEventListener('click', () => this.processImages());
+                
+                // Canvas mouse controls for rotation
+                canvas.addEventListener('mousedown', (e) => this.startDrag(e));
+                canvas.addEventListener('mousemove', (e) => this.drag(e));
+                canvas.addEventListener('mouseup', () => this.endDrag());
+                canvas.addEventListener('mouseleave', () => this.endDrag());
+                
+                // Touch controls for mobile
+                canvas.addEventListener('touchstart', (e) => this.startDrag(e.touches[0]));
+                canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    this.drag(e.touches[0]);
+                });
+                canvas.addEventListener('touchend', () => this.endDrag());
                 
                 // Drag and drop
                 uploadArea.addEventListener('dragover', (e) => {
@@ -213,6 +309,53 @@
                     uploadArea.classList.remove('dragover');
                     this.handleFiles(e.dataTransfer.files);
                 });
+            }
+            
+            startDrag(e) {
+                this.isDragging = true;
+                this.lastMouseX = e.clientX;
+                this.lastMouseY = e.clientY;
+            }
+            
+            drag(e) {
+                if (!this.isDragging || !this.vesselData) return;
+                
+                const deltaX = e.clientX - this.lastMouseX;
+                const deltaY = e.clientY - this.lastMouseY;
+                
+                this.rotationY += deltaX * 0.5;
+                this.rotationX += deltaY * 0.5;
+                
+                this.lastMouseX = e.clientX;
+                this.lastMouseY = e.clientY;
+                
+                this.redrawVisualization();
+            }
+            
+            endDrag() {
+                this.isDragging = false;
+            }
+            
+            rotateX(angle) {
+                this.rotationX += angle;
+                this.redrawVisualization();
+            }
+            
+            rotateY(angle) {
+                this.rotationY += angle;
+                this.redrawVisualization();
+            }
+            
+            rotateZ(angle) {
+                this.rotationZ += angle;
+                this.redrawVisualization();
+            }
+            
+            resetRotation() {
+                this.rotationX = 0;
+                this.rotationY = 0;
+                this.rotationZ = 0;
+                this.redrawVisualization();
             }
             
             handleFiles(files) {
@@ -270,6 +413,9 @@
                         img.cranial_caudal = parseInt(craInput.value) || 0;
                     });
                     
+                    // Generate vessel data
+                    this.vesselData = this.generateVesselData();
+                    
                     // Simple processing simulation
                     await this.simulateProcessing();
                     
@@ -282,6 +428,48 @@
                 }
             }
             
+            generateVesselData() {
+                // Generate realistic vessel structure
+                const mainVessel = [];
+                const branch1 = [];
+                const branch2 = [];
+                
+                // Main vessel (LM) - from left to center
+                for (let i = 0; i <= 10; i++) {
+                    mainVessel.push([
+                        -100 + i * 10,
+                        Math.sin(i * 0.2) * 5,
+                        Math.cos(i * 0.3) * 3
+                    ]);
+                }
+                
+                // Branch 1 (LAD) - from center upward and right
+                const bifurcationPoint = [0, 0, 0];
+                for (let i = 0; i <= 15; i++) {
+                    branch1.push([
+                        bifurcationPoint[0] + i * 5,
+                        bifurcationPoint[1] - i * 4 + Math.sin(i * 0.3) * 2,
+                        bifurcationPoint[2] + Math.cos(i * 0.2) * 2
+                    ]);
+                }
+                
+                // Branch 2 (LCX) - from center downward and right
+                for (let i = 0; i <= 12; i++) {
+                    branch2.push([
+                        bifurcationPoint[0] + i * 4,
+                        bifurcationPoint[1] + i * 5 + Math.sin(i * 0.4) * 3,
+                        bifurcationPoint[2] + Math.cos(i * 0.25) * 2
+                    ]);
+                }
+                
+                return {
+                    mainVessel,
+                    branch1,
+                    branch2,
+                    bifurcationPoint
+                };
+            }
+            
             async simulateProcessing() {
                 // Simulate processing time
                 return new Promise(resolve => setTimeout(resolve, 2000));
@@ -289,15 +477,16 @@
             
             showResults() {
                 const resultsDiv = document.getElementById('results');
-                const canvas = document.getElementById('resultCanvas');
-                const ctx = canvas.getContext('2d');
                 const statsDiv = document.getElementById('stats');
                 
                 // Show results
                 resultsDiv.style.display = 'block';
                 
-                // Draw simple visualization
-                this.drawSimpleVisualization(ctx);
+                // Draw visualization
+                this.redrawVisualization();
+                
+                // Calculate and show optimal bifurcation angle
+                this.calculateOptimalBifurcationAngle();
                 
                 // Show stats
                 statsDiv.innerHTML = `
@@ -306,8 +495,8 @@
                         <div class="stat-label">Images Processed</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-value">${Math.floor(Math.random() * 50 + 50)}</div>
-                        <div class="stat-label">Points Detected</div>
+                        <div class="stat-value">${this.vesselData.mainVessel.length + this.vesselData.branch1.length + this.vesselData.branch2.length}</div>
+                        <div class="stat-label">Points Reconstructed</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-value">${Math.floor(Math.random() * 20 + 80)}%</div>
@@ -320,7 +509,54 @@
                 `;
             }
             
-            drawSimpleVisualization(ctx) {
+            redrawVisualization() {
+                if (!this.vesselData) return;
+                
+                const canvas = document.getElementById('resultCanvas');
+                const ctx = canvas.getContext('2d');
+                this.drawVesselVisualization(ctx);
+            }
+            
+            // 3D rotation matrix functions
+            rotatePoint3D(point, rotX, rotY, rotZ) {
+                const [x, y, z] = point;
+                
+                // Convert angles to radians
+                const rx = rotX * Math.PI / 180;
+                const ry = rotY * Math.PI / 180;
+                const rz = rotZ * Math.PI / 180;
+                
+                // Rotation around X axis
+                let x1 = x;
+                let y1 = y * Math.cos(rx) - z * Math.sin(rx);
+                let z1 = y * Math.sin(rx) + z * Math.cos(rx);
+                
+                // Rotation around Y axis
+                let x2 = x1 * Math.cos(ry) + z1 * Math.sin(ry);
+                let y2 = y1;
+                let z2 = -x1 * Math.sin(ry) + z1 * Math.cos(ry);
+                
+                // Rotation around Z axis
+                let x3 = x2 * Math.cos(rz) - y2 * Math.sin(rz);
+                let y3 = x2 * Math.sin(rz) + y2 * Math.cos(rz);
+                let z3 = z2;
+                
+                return [x3, y3, z3];
+            }
+            
+            project3DTo2D(point3D, width, height) {
+                const [x, y, z] = point3D;
+                const scale = 2;
+                const perspective = 300;
+                
+                // Simple perspective projection
+                const projectedX = (x * perspective) / (perspective + z) * scale + width / 2;
+                const projectedY = (y * perspective) / (perspective + z) * scale + height / 2;
+                
+                return [projectedX, projectedY, z];
+            }
+            
+            drawVesselVisualization(ctx) {
                 const width = ctx.canvas.width;
                 const height = ctx.canvas.height;
                 
@@ -328,50 +564,224 @@
                 ctx.fillStyle = '#2a2a3a';
                 ctx.fillRect(0, 0, width, height);
                 
-                // Draw simple vessel structure
-                const centerX = width / 2;
-                const centerY = height / 2;
+                if (!this.vesselData) return;
                 
-                // Main vessel
-                ctx.strokeStyle = '#ff6b6b';
-                ctx.lineWidth = 4;
-                ctx.beginPath();
-                ctx.moveTo(centerX - 100, centerY);
-                ctx.lineTo(centerX, centerY);
-                ctx.stroke();
+                // Draw vessels with proper 3D rotation
+                this.drawVessel(ctx, this.vesselData.mainVessel, '#ff6b6b', 'Main Vessel (LM)', width, height);
+                this.drawVessel(ctx, this.vesselData.branch1, '#4ecdc4', 'Branch 1 (LAD)', width, height);
+                this.drawVessel(ctx, this.vesselData.branch2, '#45b7d1', 'Branch 2 (LCX)', width, height);
                 
-                // Branch 1
-                ctx.strokeStyle = '#4ecdc4';
-                ctx.beginPath();
-                ctx.moveTo(centerX, centerY);
-                ctx.lineTo(centerX + 80, centerY - 60);
-                ctx.stroke();
+                // Draw bifurcation point
+                const rotatedBifurcation = this.rotatePoint3D(this.vesselData.bifurcationPoint, this.rotationX, this.rotationY, this.rotationZ);
+                const [bx, by] = this.project3DTo2D(rotatedBifurcation, width, height);
                 
-                // Branch 2
-                ctx.strokeStyle = '#45b7d1';
-                ctx.beginPath();
-                ctx.moveTo(centerX, centerY);
-                ctx.lineTo(centerX + 80, centerY + 60);
-                ctx.stroke();
-                
-                // Bifurcation point
                 ctx.fillStyle = '#ffd93d';
                 ctx.beginPath();
-                ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
+                ctx.arc(bx, by, 8, 0, 2 * Math.PI);
                 ctx.fill();
                 
                 // Labels
                 ctx.fillStyle = '#e2e8f0';
                 ctx.font = '14px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('Simple 3D Reconstruction', centerX, 30);
-                ctx.fillText(`${this.images.length} images processed`, centerX, height - 20);
+                ctx.textAlign = 'left';
+                ctx.fillText('3D Coronary Vessel Reconstruction', 15, 25);
+                ctx.fillText(`Rotation: X:${this.rotationX.toFixed(0)}° Y:${this.rotationY.toFixed(0)}° Z:${this.rotationZ.toFixed(0)}°`, 15, 45);
+                ctx.fillText('🖱️ Drag to rotate • Use buttons for precise control', 15, height - 15);
+            }
+            
+            drawVessel(ctx, vesselPoints, color, label, width, height) {
+                if (vesselPoints.length < 2) return;
+                
+                // Transform and project all points
+                const projectedPoints = vesselPoints.map(point => {
+                    const rotated = this.rotatePoint3D(point, this.rotationX, this.rotationY, this.rotationZ);
+                    return this.project3DTo2D(rotated, width, height);
+                });
+                
+                // Sort by depth for proper rendering
+                const pointsWithDepth = projectedPoints.map((point, index) => ({
+                    point,
+                    depth: point[2],
+                    index
+                }));
+                
+                // Draw vessel line (do NOT connect last point to first)
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 4;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                
+                projectedPoints.forEach((point, index) => {
+                    const [x, y] = point;
+                    if (index === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                });
+                
+                ctx.stroke();
+                
+                // Draw points with depth-based sizing
+                pointsWithDepth.forEach(({point, depth, index}) => {
+                    const [x, y] = point;
+                    const size = Math.max(2, 6 - depth * 0.01); // Smaller points for farther depth
+                    const alpha = Math.max(0.3, 1 - Math.abs(depth) * 0.002); // Fade with depth
+                    
+                    ctx.fillStyle = color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
             }
         }
         
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', () => {
             new SimpleTracker();
+        });
+    </script>
+</body>
+</html>
+
+
+            
+            calculateOptimalBifurcationAngle() {
+                if (!this.vesselData) return;
+                
+                const { branch1, branch2 } = this.vesselData;
+                
+                if (branch1.length < 2 || branch2.length < 2) return;
+                
+                // Get direction vectors of the two daughter branches
+                const vec1 = this.getDirectionVector(branch1);
+                const vec2 = this.getDirectionVector(branch2);
+                
+                if (!vec1 || !vec2) return;
+                
+                // Calculate the plane containing the bifurcation
+                // The normal to this plane is the cross product of the two branch vectors
+                const planeNormal = this.crossProduct(vec1, vec2);
+                const normalMagnitude = this.vectorMagnitude(planeNormal);
+                
+                if (normalMagnitude < 0.001) return; // Vectors are parallel
+                
+                // Normalize the plane normal
+                const normalizedNormal = [
+                    planeNormal[0] / normalMagnitude,
+                    planeNormal[1] / normalMagnitude,
+                    planeNormal[2] / normalMagnitude
+                ];
+                
+                // The optimal viewing direction is along the plane normal
+                // This gives the best separation of the bifurcating branches
+                const optimalViewDirection = normalizedNormal;
+                
+                // Convert optimal viewing direction to C-arm angles
+                // LAO/RAO angle (rotation around vertical axis)
+                let laoRao = Math.atan2(optimalViewDirection[0], optimalViewDirection[2]) * (180 / Math.PI);
+                
+                // Cranial/Caudal angle (rotation around horizontal axis)  
+                let cranialCaudal = Math.asin(Math.max(-1, Math.min(1, optimalViewDirection[1]))) * (180 / Math.PI);
+                
+                // Ensure angles are in clinical ranges
+                laoRao = Math.max(-90, Math.min(50, laoRao));
+                cranialCaudal = Math.max(-40, Math.min(40, cranialCaudal));
+                
+                // Calculate the actual bifurcation angle between branches
+                const dotProduct = this.dotProduct(vec1, vec2);
+                const mag1 = this.vectorMagnitude(vec1);
+                const mag2 = this.vectorMagnitude(vec2);
+                const cosAngle = dotProduct / (mag1 * mag2);
+                const bifurcationAngle = Math.acos(Math.max(-1, Math.min(1, cosAngle))) * (180 / Math.PI);
+                
+                // Display the optimal viewing angles
+                this.displayOptimalBifurcationAngle({
+                    laoRao: Math.round(laoRao * 10) / 10,
+                    cranialCaudal: Math.round(cranialCaudal * 10) / 10,
+                    bifurcationAngle: Math.round(bifurcationAngle * 10) / 10,
+                    planeNormal: normalizedNormal,
+                    optimalViewDirection: optimalViewDirection
+                });
+            }
+            
+            getDirectionVector(vesselPoints) {
+                if (vesselPoints.length < 2) return null;
+                
+                // Use first and last points to get overall direction
+                const start = vesselPoints[0];
+                const end = vesselPoints[vesselPoints.length - 1];
+                
+                return [
+                    end[0] - start[0],
+                    end[1] - start[1], 
+                    end[2] - start[2]
+                ];
+            }
+            
+            crossProduct(vec1, vec2) {
+                return [
+                    vec1[1] * vec2[2] - vec1[2] * vec2[1],
+                    vec1[2] * vec2[0] - vec1[0] * vec2[2],
+                    vec1[0] * vec2[1] - vec1[1] * vec2[0]
+                ];
+            }
+            
+            dotProduct(vec1, vec2) {
+                return vec1[0] * vec2[0] + vec1[1] * vec2[1] + vec1[2] * vec2[2];
+            }
+            
+            vectorMagnitude(vec) {
+                return Math.sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
+            }
+            
+            displayOptimalBifurcationAngle(angles) {
+                const angleDisplay = document.getElementById('angleDisplay');
+                const optimalAngles = document.getElementById('optimalAngles');
+                
+                if (!angleDisplay || !optimalAngles) return;
+                
+                angleDisplay.style.display = 'block';
+                
+                optimalAngles.innerHTML = `
+                    <div class="angle-item">
+                        <span class="angle-label">Optimal LAO/RAO:</span>
+                        <span class="angle-value">${angles.laoRao > 0 ? 'LAO' : 'RAO'} ${Math.abs(angles.laoRao)}°</span>
+                    </div>
+                    <div class="angle-item">
+                        <span class="angle-label">Optimal Cranial/Caudal:</span>
+                        <span class="angle-value">${angles.cranialCaudal > 0 ? 'CRA' : 'CAU'} ${Math.abs(angles.cranialCaudal)}°</span>
+                    </div>
+                    <div class="angle-item">
+                        <span class="angle-label">Bifurcation Angle:</span>
+                        <span class="angle-value">${angles.bifurcationAngle}°</span>
+                    </div>
+                `;
+                
+                // Store optimal angles for potential camera positioning
+                this.optimalAngles = angles;
+            }
+            
+            setOptimalView() {
+                if (!this.optimalAngles) return;
+                
+                // Set rotation to show optimal bifurcation view
+                // This is a simplified mapping - in real implementation would need proper coordinate transformation
+                this.rotationX = -this.optimalAngles.cranialCaudal;
+                this.rotationY = this.optimalAngles.laoRao;
+                this.rotationZ = 0;
+                
+                this.redrawVisualization();
+            }
+        }
+        
+        // Global reference for button callbacks
+        let tracker;
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            tracker = new SimpleTracker();
         });
     </script>
 </body>
